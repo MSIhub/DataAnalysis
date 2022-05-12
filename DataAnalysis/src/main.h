@@ -6,6 +6,7 @@
 #include <vector>
 #include <algorithm>
 #include <cstdlib>
+#include <ctime>
 #include "gnuplot-iostream.h"
 
 #include "signal_statistics.h"
@@ -113,11 +114,18 @@ double state_lw_cutoff_buff[KERNEL_LENGTH];
 double state_up_cutoff_buff[KERNEL_LENGTH];
 
 //rt 
-double Output_signal_rt_dest[RT_SIG_LEN+RT_KER_LEN];
+
 double Output_signal_rt_kernel[RT_KER_LEN];
-double Output_signal_rt_dest2[RT_SIG_LEN];
-double Output_signal_rt_integral[RT_SIG_LEN] = {0};//initializing with all zero values
-double Output_signal_rt_double_integral[RT_SIG_LEN] = { 0 };
+
+struct SP7Pose
+{
+    double x, y, z, roll, pitch, yaw;
+};
+
+struct SP7Vel
+{
+    double vx, vy, vz, vroll, vpitch, vyaw;
+};
 
 double t_prev = 0.0;
 double velocity_prev = 0.0;
@@ -132,8 +140,10 @@ double position = 0.0;
 
 double Input_Buff[RT_KER_LEN];
 
+
+
 //FUNCTION PROTOTYPES IN MAIN FOR TESTING PURPOSE
-void cueing_acceleration_online(double sig_acc_input, double sig_time, double* kernel, double scale_factor, int data_index, bool isLogging, std::string log_fldr);
+void cueing_acceleration_online(double sig_acc_input, double sig_time, double* kernel, double scale_factor, int data_index, double* out_pos_, double* out_vel_);
 void Cueing_online_test();
 void Cueing_offline_test();
 void cueing_acceleration(double*, double, double, std::string, int);

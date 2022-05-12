@@ -17,24 +17,7 @@ int main()
 	//Cueing_offline_test();
 
 	//Translational
-	//Prepare the signal of N input signal and change M of kernel length:  2 and 2
 	Cueing_online_test();
-	/*int h_size = 3;
-	double* h = new double[h_size];
-	double* x = new double[h_size];
-	for (int i = 0; i < h_size; i++)
-	{
-		h[i] = double(i) + 2.0;
-		x[i] = 0;
-	}	
-	int cond = 0;
-	while (cond < 10)
-	{
-		double y = Convolve_rt(h, h_size, double( cond), x);
-		cond++;
-	}
-	delete[] h, x;
-	*/
 	return 0;
 }
 
@@ -43,21 +26,60 @@ void Cueing_online_test()
 {
 
 	bool log_data = true;
-	double hp_cutoff = 0.089; //  
-	calc_kernel_high_pass(RT_KER_LEN, hp_cutoff, &Output_signal_rt_kernel[0], log_data);
 	double scale_factor = 1;// 0.0005;
-	std::string log_fldr = "log/rt_ay/";
-	//Extracting data 
 	int data_idx = 0;
+	double hp_cutoff = 0.089; 
+	calc_kernel_high_pass(RT_KER_LEN, hp_cutoff, &Output_signal_rt_kernel[0], log_data);
+
+	//logging to file
+	std::string log_fldr = "log/rt_ay/";
+	std::string delimiter = "\t"; //tab limited text file with 8 point precision
+	std::string log_filename = "log_data_";
+	log_filename += std::to_string(std::time(nullptr));
+	log_filename += ".dat";
+	std::fstream log_fptr;
+	log_fptr.open(log_fldr + log_filename, std::fstream::in | std::fstream::out | std::fstream::app);
+
+
 	for (int m = 0; m < RT_TOTAL_SIG_LEN; m++)
 	{
-		double sig_acc = xplane_ay_test3[m];
-		double sig_time = xplane_t_test3[m];
-		cueing_acceleration_online(sig_acc, sig_time, &Output_signal_rt_kernel[0], scale_factor, data_idx, log_data, log_fldr);
+		SP7Pose* pos = new SP7Pose{0,0,0,0,0,0};// initialization to avoid sending garbage value
+		SP7Vel* vel = new SP7Vel{0,0,0,0,0,0};
+		cueing_acceleration_online(xplane_ay_test3[m], xplane_t_test3[m], &Output_signal_rt_kernel[0], scale_factor, 2, &(pos->y), &(vel->vy));
+
+		
+		if (!log_data) return;
+		//Preparing the data stream
+		std::stringstream ss;
+		ss.precision(8);// max to micro meter
+		ss << std::fixed << t << delimiter << pos->x << delimiter <<
+			pos->y << delimiter <<
+			pos->z << delimiter <<
+			pos->roll << delimiter <<
+			pos->pitch << delimiter <<
+			pos->yaw << delimiter <<
+			vel->vx << delimiter << 
+			vel->vy << delimiter << 
+			vel->vz << delimiter << 
+			vel->vroll << delimiter << 
+			vel->vpitch << delimiter << 
+			vel->vyaw;		
+		
+		if (log_fptr.is_open())
+		{
+			log_fptr << "\n";
+			log_fptr << ss.str();
+			
+		}
+
+		delete pos, vel;
+		
 	}
+	log_fptr.close();
+	std::cout << "Log file location: " << log_fldr << log_filename ;
 }
 
-void cueing_acceleration_online(double sig_acc_input, double sig_time, double* kernel, double scale_factor, int data_index, bool isLogging, std::string log_fldr)
+void cueing_acceleration_online(double sig_acc_input, double sig_time, double* kernel, double scale_factor, int data_index, double* out_pos_, double* out_vel_)
 {
 	/* filter => scale => integrate => integrate => update prev*/
 	//Convolving with designed kernel will filter the signal
@@ -70,6 +92,9 @@ void cueing_acceleration_online(double sig_acc_input, double sig_time, double* k
 	position = Intergration_Trapezoidal(velocity, velocity_prev, position_prev, t_prev, t); //Integration
 	position += SP7_ZERO_POSE[data_index];//Offseting with respect to zeropose of SP7
 
+	//Updating the output values
+	*(out_pos_) = position;
+	*(out_vel_) = velocity;
 
 	//Updating the previous to current
 	t_prev = t;
@@ -77,22 +102,7 @@ void cueing_acceleration_online(double sig_acc_input, double sig_time, double* k
 	velocity_prev = velocity;
 	position_prev = position;
 
-	if (!isLogging) return;
-	//Preparing the data stream
-	std::stringstream ss; 
-	ss.precision(6);// max to micro meter
-	std::string delimiter = ",";
-	ss << std::fixed << t << delimiter << acc_fltrd_scaled << delimiter << velocity << delimiter << position;
-
-	//logging to file
-	std::fstream log_fptr;
-	log_fptr.open(log_fldr + "log.dat", std::fstream::in | std::fstream::out | std::fstream::app);
-	if (log_fptr.is_open())
-	{
-		log_fptr << "\n";
-		log_fptr << ss.str();
-		log_fptr.close();
-	}
+	
 }
 #pragma endregion
 
