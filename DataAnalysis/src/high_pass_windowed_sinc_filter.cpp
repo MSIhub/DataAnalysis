@@ -8,7 +8,7 @@ void hp_windowed_sinc_fltr(
 	double* sig_dest_arr,
 	int input_sig_length)
 {
-	double M_PI = 3.14159265358979323846;
+	const double M_PI = 3.14159265358979323846;
 	double threshold = 0;
 	//Calculate the first low-pass filter kernel 
 	for (int i = 0; i < filter_length; i++)

@@ -166,6 +166,7 @@
     <ClCompile Include="src\dft.cpp" />
     <ClCompile Include="src\high_pass_windowed_sinc_filter.cpp" />
     <ClCompile Include="src\idft.cpp" />
+    <ClCompile Include="src\kernel.cpp" />
     <ClCompile Include="src\low_pass_windowed_sinc_filter.cpp" />
     <ClCompile Include="src\polar_notation.cpp" />
     <ClCompile Include="src\signal_statistics.cpp" />
@@ -179,6 +180,7 @@
     <ClInclude Include="src\dft.h" />
     <ClInclude Include="src\high_pass_windowed_sinc_filter.h" />
     <ClInclude Include="src\idft.h" />
+    <ClInclude Include="src\kernel.h" />
     <ClInclude Include="src\low_pass_windowed_sinc_filter.h" />
     <ClInclude Include="src\main.h" />
     <ClInclude Include="src\polar_notation.h" />

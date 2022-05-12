@@ -14,21 +14,188 @@ int main()
 	//low_pass_windowed_sinc_filter_test();
 	//band_pass_test();
 
+	//Cueing_offline_test();
+
+	//Translational
+	//Prepare the signal of N input signal and change M of kernel length:  2 and 2
+	Cueing_online_test();
+	/*int h_size = 3;
+	double* h = new double[h_size];
+	double* x = new double[h_size];
+	for (int i = 0; i < h_size; i++)
+	{
+		h[i] = double(i) + 2.0;
+		x[i] = 0;
+	}	
+	int cond = 0;
+	while (cond < 10)
+	{
+		double y = Convolve_rt(h, h_size, double( cond), x);
+		cond++;
+	}
+	delete[] h, x;
+	*/
+	return 0;
+}
+
+#pragma region Cueing Online 
+void Cueing_online_test()
+{
+
+	bool log_data = true;
+	double hp_cutoff = 0.089; //  
+	calc_kernel_high_pass(RT_KER_LEN, hp_cutoff, &Output_signal_rt_kernel[0], log_data);
+	double scale_factor = 1;// 0.0005;
+	std::string log_fldr = "log/rt_ay/";
+	//Extracting data 
+	int data_idx = 0;
+	for (int m = 0; m < RT_TOTAL_SIG_LEN; m++)
+	{
+		double sig_acc = xplane_ay_test3[m];
+		double sig_time = xplane_t_test3[m];
+		cueing_acceleration_online(sig_acc, sig_time, &Output_signal_rt_kernel[0], scale_factor, data_idx, log_data, log_fldr);
+	}
+}
+
+void cueing_acceleration_online(double sig_acc_input, double sig_time, double* kernel, double scale_factor, int data_index, bool isLogging, std::string log_fldr)
+{
+	/* filter => scale => integrate => integrate => update prev*/
+	//Convolving with designed kernel will filter the signal
+	//Offestting should not affect the integration value as the value will be modified  based on that
+
+	t = sig_time;
+	acc_fltrd = Convolve_rt(&kernel[0], RT_KER_LEN, sig_acc_input, &Input_Buff[0]);
+	acc_fltrd_scaled = scale_factor * acc_fltrd; //scale 
+	velocity = Intergration_Trapezoidal(acc_fltrd_scaled, acc_fltrd_scaled_prev, velocity_prev, t_prev, t); //Integration
+	position = Intergration_Trapezoidal(velocity, velocity_prev, position_prev, t_prev, t); //Integration
+	position += SP7_ZERO_POSE[data_index];//Offseting with respect to zeropose of SP7
+
+
+	//Updating the previous to current
+	t_prev = t;
+	acc_fltrd_scaled_prev = acc_fltrd_scaled;
+	velocity_prev = velocity;
+	position_prev = position;
+
+	if (!isLogging) return;
+	//Preparing the data stream
+	std::stringstream ss; 
+	ss.precision(6);// max to micro meter
+	std::string delimiter = ",";
+	ss << std::fixed << t << delimiter << acc_fltrd_scaled << delimiter << velocity << delimiter << position;
+
+	//logging to file
+	std::fstream log_fptr;
+	log_fptr.open(log_fldr + "log.dat", std::fstream::in | std::fstream::out | std::fstream::app);
+	if (log_fptr.is_open())
+	{
+		log_fptr << "\n";
+		log_fptr << ss.str();
+		log_fptr.close();
+	}
+}
+#pragma endregion
+
+#pragma region Helper functions
+
+double Intergration_Trapezoidal(double input_curr, double input_prev, double output_prev, double t_prev, double t_curr)
+{
+	return output_prev + ((t_curr - t_prev) * ((input_curr + input_prev) / 2)); // Trapedzoidal intergral
+}
+//double Intergration_Trapezoidal(double acc_curr, double acc_prev, double vel_prev, double t_prev, double t_curr)
+
+void convolve(double* sig1, int sig1_len, double* sig2, int sig2_len, double* convolved_sig_)
+{
+	//Convolution is commutative
+	bool isSig2Large = (sig1_len < sig2_len);
+
+	if (isSig2Large)
+	{
+		for (int j = sig1_len; j < sig2_len; j++)
+		{
+			convolved_sig_[j] = 0;
+			for (int i = 0; i < sig1_len; i++)
+			{
+				convolved_sig_[j] = convolved_sig_[j] + sig2[j - i] * sig1[i];
+
+			}
+		}
+	}
+	else
+	{
+		for (int j = sig2_len; j < sig1_len; j++)
+		{
+			convolved_sig_[j] = 0;
+			for (int i = 0; i < sig2_len; i++)
+			{
+				convolved_sig_[j] = convolved_sig_[j] + sig1[j - i] * sig2[i];
+
+			}
+		}
+	}
+
+}//O((sig1_len+sig2_len)^2) //could be improved
+
+// Real time convolution for one input signal and filter kernel
+// Covolution with MAC(multiply and accumulate) and circultion buffering (shifting)
+double Convolve_rt(double* h, int h_size, double x_in , double* x)
+{
+	// executes only when run first and then treats as a global variable
+	//static int idx = h_size - 1;
+	static int i = h_size - 1;
+
+	x[i] = x_in;
+
+	//Covolution
+	double y_out = 0.0;
+	for (int k = 0; k < h_size; k++)
+		y_out += h[k] * x[(k + i) % h_size]; //MAC
+
+	//idx++;
+	//Signal shift circularly through  array x in time-reversed order
+	i += h_size - 1; 
+	i %= h_size;
+	return y_out;
+}
+
+void negate_scale_rmpadding(double* filtered_sig, int kernel_len, int sig_len, int scale_factor, double* sig_out_)
+{
+	//Scale value calculation, removing padding data and negating the effect of spectral inversion
+	int j = 0;
+	int total_length = kernel_len + sig_len;
+	int mid_idx = (total_length / 2) - 1;
+	if (total_length % 2 != 0)
+		mid_idx++;
+
+	for (int i = mid_idx; i < mid_idx + sig_len; i++)
+	{
+		sig_out_[j] = scale_factor * (-filtered_sig[i]);
+		j++;
+	}
+}
+
+#pragma endregion
+
+
+#pragma region Cueing Offline 
+
+void Cueing_offline_test()
+{
 	//Translational
 	double hp_cutoff = 0.089; //  
-	double scale_factor = 0.0005;
+	double scale_factor = 1; //0.0005
 	std::string log_fldr = "log/ax/";
 	int data_idx = 0;
 	cueing_acceleration(&xplane_ax_test3[0], hp_cutoff, scale_factor, log_fldr, data_idx);
 
 	hp_cutoff = 0.089; //  
-	scale_factor = 0.0005;
+	scale_factor = 1; //0.0005
 	log_fldr = "log/ay/";
 	data_idx = 1;
 	cueing_acceleration(&xplane_ay_test3[0], hp_cutoff, scale_factor, log_fldr, data_idx);
-
+	
 	hp_cutoff = 0.089; //  
-	scale_factor = 0.0005;
+	scale_factor = 1; //0.0005
 	log_fldr = "log/az/";
 	data_idx = 2;
 	cueing_acceleration(&xplane_az_test3[0], hp_cutoff, scale_factor, log_fldr, data_idx);
@@ -36,30 +203,23 @@ int main()
 
 	//Rotational
 	double hpv_cutoff = 0.089; //  
-	double scale_factor_v = 0.025;
+	double scale_factor_v = 1; //0.025;
 	log_fldr = "log/vroll/";
 	data_idx = 3;
 	cueing_velocity(&xplane_vroll_test3[0], hpv_cutoff, scale_factor_v, log_fldr, data_idx);
-	
+
 	hpv_cutoff = 0.089; //  
-	scale_factor_v = 0.01;
+	scale_factor_v = 1; //0.01;
 	log_fldr = "log/vpitch/";
 	data_idx = 4;
 	cueing_velocity(&xplane_vpitch_test3[0], hpv_cutoff, scale_factor_v, log_fldr, data_idx);
-	
+
 	hpv_cutoff = 0.089; //  
-	scale_factor_v = 0.05;
+	scale_factor_v = 1; //0.05;
 	log_fldr = "log/vyaw/";
 	data_idx = 5;
 	cueing_velocity(&xplane_vyaw_test3[0], hpv_cutoff, scale_factor_v, log_fldr, data_idx);
-
-
-
-
-
-	return 0;
 }
-
 
 void cueing_velocity(double* sig_acc_input, double hp_cutoff, double scale_factor, std::string log_folder, int data_index)
 {
@@ -288,7 +448,6 @@ void cueing_velocity(double* sig_acc_input, double hp_cutoff, double scale_facto
 	}
 
 }
-
 void cueing_acceleration(double * sig_acc_input, double hp_cutoff, double scale_factor, std::string log_folder, int data_index)
 {
 	// frequency analysis of the input signal 
@@ -532,7 +691,9 @@ void cueing_acceleration(double * sig_acc_input, double hp_cutoff, double scale_
 	}
 
 }
+#pragma endregion 
 
+#pragma region DSP Tutorial Methods
 void band_pass_test()
 {
 	double lower_cutoff_freq = 0.21; // 10kHz  ////10kHz.002; // 0.1kHz
@@ -796,10 +957,6 @@ void convolution_test()
 		output_sig_fptr.close();
 	}
 }
+#pragma endregion 
 
 
-double Intergration_Trapezoidal(double input_curr, double input_prev, double output_prev, double t_prev, double t_curr)
-{
-	return output_prev + ((t_curr - t_prev) * ((input_curr + input_prev)/2)); // Trapedzoidal intergral
-}
-//double Intergration_Trapezoidal(double acc_curr, double acc_prev, double vel_prev, double t_prev, double t_curr)

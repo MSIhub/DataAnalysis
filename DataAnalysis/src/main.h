@@ -18,6 +18,8 @@
 #include "high_pass_windowed_sinc_filter.h"
 #include "band_pass_windowed_sinc_filter.h"
 
+#include "kernel.h"
+
 //GLOBAL DEFINITIONS
 //#define XP_SIG_LENGTH 4716 // test1;
 #define XP_SIG_LENGTH 5186
@@ -27,6 +29,13 @@
 #define POL_SIG_LENGTH 320
 #define COMPLEX_SIG_LENGTH 501
 #define KERNEL_LENGTH 320 
+
+//rt
+#define RT_TOTAL_SIG_LEN 5186//test3
+#define RT_SIG_LEN 1 // In real time, only 1 input is received at a time
+#define RT_KER_LEN 4	
+//4
+
 
 constexpr double SP7_ZERO_POSE[6] = {0.0, 0.0, 0.401, 0.0, 0.0, 0.0};
 //SIGNALS in WAVEFORMS.CPP
@@ -48,6 +57,10 @@ extern double _320_pts_ecg_IMX[POL_SIG_LENGTH];
 extern double _320_pts_ecg_REX[POL_SIG_LENGTH];
 extern double _501pts_20Hz_sig_imx[COMPLEX_SIG_LENGTH];
 extern  double _501pts_20Hz_sig_rex[COMPLEX_SIG_LENGTH];
+
+// rt test
+extern double xplane_ay_test3_rt[RT_SIG_LEN];
+
 
 //GLOBAL VARIABLE
 double Output_signal_xp_rex[XP_SIG_LENGTH / 2];
@@ -99,14 +112,36 @@ double Output_signal_bp_kernel[KERNEL_LENGTH];
 double state_lw_cutoff_buff[KERNEL_LENGTH];
 double state_up_cutoff_buff[KERNEL_LENGTH];
 
+//rt 
+double Output_signal_rt_dest[RT_SIG_LEN+RT_KER_LEN];
+double Output_signal_rt_kernel[RT_KER_LEN];
+double Output_signal_rt_dest2[RT_SIG_LEN];
+double Output_signal_rt_integral[RT_SIG_LEN] = {0};//initializing with all zero values
+double Output_signal_rt_double_integral[RT_SIG_LEN] = { 0 };
 
+double t_prev = 0.0;
+double velocity_prev = 0.0;
+double position_prev = 0.0;
+double acc_fltrd_scaled_prev = 0.0;
 
+double t = 0.0;
+double acc_fltrd = 0.0;
+double acc_fltrd_scaled = 0.0;
+double velocity = 0.0;
+double position = 0.0;
+
+double Input_Buff[RT_KER_LEN];
 
 //FUNCTION PROTOTYPES IN MAIN FOR TESTING PURPOSE
+void cueing_acceleration_online(double sig_acc_input, double sig_time, double* kernel, double scale_factor, int data_index, bool isLogging, std::string log_fldr);
+void Cueing_online_test();
+void Cueing_offline_test();
 void cueing_acceleration(double*, double, double, std::string, int);
 void cueing_velocity(double*, double , double , std::string , int );
 double Intergration_Trapezoidal(double input_curr, double input_prev, double output_prev, double t_prev, double t_curr);
-
+void convolve(double* sig1, int sig1_len, double* sig2, int sig2_len, double* convolved_sig_);
+void negate_scale_rmpadding(double* filtered_sig, int kernel_len, int sig_len, int scale_factor, double* sig_out_);
+double Convolve_rt(double* h, int h_size, double x_in, double* x);
 
 //temp tests
 void calc_running_sum(double*, double* , int );
