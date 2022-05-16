@@ -114,8 +114,8 @@ double state_lw_cutoff_buff[KERNEL_LENGTH];
 double state_up_cutoff_buff[KERNEL_LENGTH];
 
 //rt 
-
-double Output_signal_rt_kernel[RT_KER_LEN];
+double high_pass_kernel_rt[RT_KER_LEN];
+double low_pass_kernel_rt[RT_KER_LEN];
 
 struct SP7Pose
 {
@@ -127,23 +127,48 @@ struct SP7Vel
     double vx, vy, vz, vroll, vpitch, vyaw;
 };
 
-double t_prev = 0.0;
-double velocity_prev = 0.0;
-double position_prev = 0.0;
-double acc_fltrd_scaled_prev = 0.0;
 
-double t = 0.0;
-double acc_fltrd = 0.0;
-double acc_fltrd_scaled = 0.0;
-double velocity = 0.0;
-double position = 0.0;
+struct CueData
+{
+    double t_prev = 0.0;
+    double velocity_prev = 0.0;
+    double position_prev = 0.0;
+    double acc_fltrd_scaled_prev = 0.0;
 
-double Input_Buff[RT_KER_LEN];
+    double t = 0.0;
+    double acc_fltrd = 0.0;
+    double acc_fltrd_scaled = 0.0;
+    double velocity = 0.0;
+    double position = 0.0;
+ 
+    double Input_Buff[RT_KER_LEN];
+    int circ_buff_idx = RT_KER_LEN-1;
+};
+
+
+struct CueDataVel
+{
+    double t_prev = 0.0;
+    double velocity_fltr_scaled_prev = 0.0;
+    double position_prev = 0.0;
+
+    double t = 0.0;
+    double velocity_fltr = 0.0;
+    double velocity_fltr_scaled = 0.0;
+    double position = 0.0;
+
+    double Input_Buff[RT_KER_LEN];
+    int circ_buff_idx = RT_KER_LEN - 1;
+};
 
 
 
 //FUNCTION PROTOTYPES IN MAIN FOR TESTING PURPOSE
-void cueing_acceleration_online(double sig_acc_input, double sig_time, double* kernel, double scale_factor, int data_index, double* out_pos_, double* out_vel_);
+void cueing_acceleration_online(double sig_acc_input, double sig_time, double* kernel, double scale_factor, int data_index, CueData* cue_data, double* out_pos_, double* out_vel_, double* out_t_);
+
+void cueing_velocity_online(double sig_vel_input, double sig_time, double* kernel, double scale_factor, int data_index, CueDataVel* cue_data, double* out_pos_, double* out_vel_, double* out_t_);
+
+
 void Cueing_online_test();
 void Cueing_offline_test();
 void cueing_acceleration(double*, double, double, std::string, int);
@@ -151,7 +176,7 @@ void cueing_velocity(double*, double , double , std::string , int );
 double Intergration_Trapezoidal(double input_curr, double input_prev, double output_prev, double t_prev, double t_curr);
 void convolve(double* sig1, int sig1_len, double* sig2, int sig2_len, double* convolved_sig_);
 void negate_scale_rmpadding(double* filtered_sig, int kernel_len, int sig_len, int scale_factor, double* sig_out_);
-double Convolve_rt(double* h, int h_size, double x_in, double* x);
+double Convolve_rt(double* h, int h_size, double x_in, double* x, int* circ_index);
 
 //temp tests
 void calc_running_sum(double*, double* , int );

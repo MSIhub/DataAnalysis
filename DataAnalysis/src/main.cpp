@@ -25,14 +25,19 @@ int main()
 void Cueing_online_test()
 {
 
-	bool log_data = true;
-	double scale_factor = 1;// 0.0005;
+	bool log_data = true; 
+	double scale_factor = 1;// 0.0005; //scaling
 	int data_idx = 0;
+	
+	//high pass kernel parameters
 	double hp_cutoff = 0.089; 
-	calc_kernel_high_pass(RT_KER_LEN, hp_cutoff, &Output_signal_rt_kernel[0], log_data);
+	calc_kernel_high_pass(RT_KER_LEN, hp_cutoff, &high_pass_kernel_rt[0], log_data);
 
-	//logging to file
-	std::string log_fldr = "log/rt_ay/";
+	double low_cutoff = 0.089;
+	calc_kernel_low_pass(RT_KER_LEN, low_cutoff, &low_pass_kernel_rt[0], log_data);
+
+	//logginOutput_signal_rt_kernelg to file
+	std::string log_fldr = "log/rt/";
 	std::string delimiter = "\t"; //tab limited text file with 8 point precision
 	std::string log_filename = "log_data_";
 	log_filename += std::to_string(std::time(nullptr));
@@ -40,19 +45,44 @@ void Cueing_online_test()
 	std::fstream log_fptr;
 	log_fptr.open(log_fldr + log_filename, std::fstream::in | std::fstream::out | std::fstream::app);
 
+	// CueData
+	CueData* c_ax = new CueData{};
+	CueData* c_ay = new CueData{};
+	CueData* c_az = new CueData{};
+	CueDataVel* c_vroll = new CueDataVel{};
+	CueDataVel* c_vpitch = new CueDataVel{};
+	CueDataVel* c_vyaw = new CueDataVel{};
 
 	for (int m = 0; m < RT_TOTAL_SIG_LEN; m++)
 	{
 		SP7Pose* pos = new SP7Pose{0,0,0,0,0,0};// initialization to avoid sending garbage value
 		SP7Vel* vel = new SP7Vel{0,0,0,0,0,0};
-		cueing_acceleration_online(xplane_ay_test3[m], xplane_t_test3[m], &Output_signal_rt_kernel[0], scale_factor, 2, &(pos->y), &(vel->vy));
-
+		double timestamp = 0.0;
 		
+		//HPF
+		cueing_acceleration_online(xplane_ax_test3[m], xplane_t_test3[m], &high_pass_kernel_rt[0], scale_factor, 0, c_ax, &(pos->x), &(vel->vx), &timestamp);
+
+		cueing_acceleration_online(xplane_ay_test3[m], xplane_t_test3[m], &high_pass_kernel_rt[0], scale_factor, 1, c_ay , &(pos->y), &(vel->vy), &timestamp);
+
+		cueing_acceleration_online(xplane_az_test3[m], xplane_t_test3[m], &high_pass_kernel_rt[0], scale_factor, 2, c_az , &(pos->z), &(vel->vz), & timestamp);
+
+		cueing_velocity_online(xplane_vroll_test3[m], xplane_t_test3[m], &high_pass_kernel_rt[0], scale_factor, 3, c_vroll, &(pos->roll), &(vel->vroll), &timestamp);
+		
+		cueing_velocity_online(xplane_vpitch_test3[m], xplane_t_test3[m], &high_pass_kernel_rt[0], scale_factor, 4, c_vpitch, &(pos->pitch), &(vel->vpitch), &timestamp);
+
+		cueing_velocity_online(xplane_vyaw_test3[m], xplane_t_test3[m], &high_pass_kernel_rt[0], scale_factor, 5, c_vyaw, &(pos->yaw), &(vel->vyaw), &timestamp);
+
+
+		//LPF
+
+
 		if (!log_data) return;
 		//Preparing the data stream
 		std::stringstream ss;
 		ss.precision(8);// max to micro meter
-		ss << std::fixed << t << delimiter << pos->x << delimiter <<
+		ss << std::fixed <<
+			timestamp << delimiter <<
+			pos->x << delimiter <<
 			pos->y << delimiter <<
 			pos->z << delimiter <<
 			pos->roll << delimiter <<
@@ -79,37 +109,80 @@ void Cueing_online_test()
 	std::cout << "Log file location: " << log_fldr << log_filename ;
 }
 
-void cueing_acceleration_online(double sig_acc_input, double sig_time, double* kernel, double scale_factor, int data_index, double* out_pos_, double* out_vel_)
+void cueing_acceleration_online(double sig_acc_input, double sig_time, double* kernel, double scale_factor, int data_index,CueData* cue_data, double* out_pos_, double* out_vel_, double* out_t_)
+{
+	/* filter => scale => integrate => integrate => update prev*/
+	//Convolving with designed kernel will filter the signal
+	//Offestting should not affect the integration value as the value will be modified  based on that
+	
+	cue_data->t = sig_time;
+	cue_data->acc_fltrd = Convolve_rt(&kernel[0], RT_KER_LEN, sig_acc_input, cue_data-> Input_Buff, &(cue_data->circ_buff_idx));
+	cue_data->acc_fltrd_scaled = scale_factor * cue_data->acc_fltrd; //scale 
+	cue_data->velocity = Intergration_Trapezoidal(cue_data->acc_fltrd_scaled, cue_data->acc_fltrd_scaled_prev, cue_data->velocity_prev, cue_data->t_prev, cue_data->t); //Integration
+	cue_data->position = Intergration_Trapezoidal(cue_data->velocity, cue_data->velocity_prev, cue_data->position_prev, cue_data->t_prev, cue_data->t); 
+
+	//Updating the output values
+	*(out_pos_) = cue_data->position +SP7_ZERO_POSE[data_index];//Offseting with respect to zeropose of SP7
+	*(out_vel_) = cue_data->velocity;
+	*(out_t_) = cue_data->t;
+	//Updating the previous to current
+	cue_data->t_prev = cue_data->t;
+	cue_data->acc_fltrd_scaled_prev = cue_data->acc_fltrd_scaled;
+	cue_data->velocity_prev = cue_data->velocity;
+	cue_data->position_prev = cue_data->position;	
+}
+
+void cueing_velocity_online(double sig_vel_input, double sig_time, double* kernel, double scale_factor, int data_index, CueDataVel* cue_data, double* out_pos_, double* out_vel_, double* out_t_)
 {
 	/* filter => scale => integrate => integrate => update prev*/
 	//Convolving with designed kernel will filter the signal
 	//Offestting should not affect the integration value as the value will be modified  based on that
 
-	t = sig_time;
-	acc_fltrd = Convolve_rt(&kernel[0], RT_KER_LEN, sig_acc_input, &Input_Buff[0]);
-	acc_fltrd_scaled = scale_factor * acc_fltrd; //scale 
-	velocity = Intergration_Trapezoidal(acc_fltrd_scaled, acc_fltrd_scaled_prev, velocity_prev, t_prev, t); //Integration
-	position = Intergration_Trapezoidal(velocity, velocity_prev, position_prev, t_prev, t); //Integration
-	position += SP7_ZERO_POSE[data_index];//Offseting with respect to zeropose of SP7
+	cue_data->t = sig_time;
+	cue_data->velocity_fltr = Convolve_rt(&kernel[0], RT_KER_LEN, sig_vel_input, cue_data->Input_Buff, &(cue_data->circ_buff_idx));
+	cue_data->velocity_fltr_scaled = scale_factor * cue_data->velocity_fltr; //scale 
+	cue_data->position = Intergration_Trapezoidal(cue_data->velocity_fltr_scaled, cue_data->velocity_fltr_scaled_prev, cue_data->position_prev, cue_data->t_prev, cue_data->t);
 
 	//Updating the output values
-	*(out_pos_) = position;
-	*(out_vel_) = velocity;
-
+	*(out_pos_) = cue_data->position + SP7_ZERO_POSE[data_index];//Offseting with respect to zeropose of SP7
+	*(out_vel_) = cue_data->velocity_fltr_scaled;
+	*(out_t_) = cue_data->t;
 	//Updating the previous to current
-	t_prev = t;
-	acc_fltrd_scaled_prev = acc_fltrd_scaled;
-	velocity_prev = velocity;
-	position_prev = position;
-
-	
+	cue_data->t_prev = cue_data->t;
+	cue_data->velocity_fltr_scaled_prev = cue_data->velocity_fltr_scaled;
+	cue_data->position_prev = cue_data->position;
 }
+
 #pragma endregion
 
 #pragma region Helper functions
 
+double Convolve_rt(double* h, int h_size, double x_in, double* x, int* circ_index)
+{
+	/*
+	Real time convolution for one input signaland filter kernel
+	Covolution with MAC(multiply and accumulate) and circultion buffering (shifting)
+	executes only when run first and then treats as a global variable
+	*/
+	//circ_index = h_size - 1;
+
+	x[*(circ_index)] = x_in;
+
+	//Covolution
+	double y_out = 0.0;
+	for (int k = 0; k < h_size; k++)
+		y_out += h[k] * x[(k + *(circ_index)) % h_size]; //MAC
+
+	//Signal shift circularly through  array x in time-reversed order
+	*(circ_index) += h_size - 1;
+	*(circ_index) %= h_size;
+	return y_out;
+}
+
 double Intergration_Trapezoidal(double input_curr, double input_prev, double output_prev, double t_prev, double t_curr)
 {
+	if (input_curr == 0 && input_prev == 0)
+		return 0.0;
 	return output_prev + ((t_curr - t_prev) * ((input_curr + input_prev) / 2)); // Trapedzoidal intergral
 }
 //double Intergration_Trapezoidal(double acc_curr, double acc_prev, double vel_prev, double t_prev, double t_curr)
@@ -146,27 +219,8 @@ void convolve(double* sig1, int sig1_len, double* sig2, int sig2_len, double* co
 
 }//O((sig1_len+sig2_len)^2) //could be improved
 
-// Real time convolution for one input signal and filter kernel
-// Covolution with MAC(multiply and accumulate) and circultion buffering (shifting)
-double Convolve_rt(double* h, int h_size, double x_in , double* x)
-{
-	// executes only when run first and then treats as a global variable
-	//static int idx = h_size - 1;
-	static int i = h_size - 1;
 
-	x[i] = x_in;
 
-	//Covolution
-	double y_out = 0.0;
-	for (int k = 0; k < h_size; k++)
-		y_out += h[k] * x[(k + i) % h_size]; //MAC
-
-	//idx++;
-	//Signal shift circularly through  array x in time-reversed order
-	i += h_size - 1; 
-	i %= h_size;
-	return y_out;
-}
 
 void negate_scale_rmpadding(double* filtered_sig, int kernel_len, int sig_len, int scale_factor, double* sig_out_)
 {
