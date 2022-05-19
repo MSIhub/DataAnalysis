@@ -16,7 +16,6 @@ int main()
 
 	//Cueing_offline_test();
 
-	//Translational
 	Cueing_online_test();
 	return 0;
 }
@@ -24,19 +23,32 @@ int main()
 #pragma region Cueing Online 
 void Cueing_online_test()
 {
+	double scale_factor_rotation = 0.003;
+	double scale_factor_translation = 0.00025;// 0.0005; //scaling
+	double hp_cutoff = 0.089; 
+	double low_cutoff = 0.07;
 
 	bool log_data = true; 
-	double scale_factor = 1;// 0.0005; //scaling
-	int data_idx = 0;
 	
-	//high pass kernel parameters
-	double hp_cutoff = 0.089; 
+	//Kernel calculation
 	calc_kernel_high_pass(RT_KER_LEN, hp_cutoff, &high_pass_kernel_rt[0], log_data);
-
-	double low_cutoff = 0.089;
 	calc_kernel_low_pass(RT_KER_LEN, low_cutoff, &low_pass_kernel_rt[0], log_data);
 
-	//logginOutput_signal_rt_kernelg to file
+
+	int data_idx = 0;
+	// CueData
+	CueData* c_ax = new CueData{};
+	CueData* c_ay = new CueData{};
+	CueData* c_az = new CueData{};
+	CueData* c_tx = new CueData{};
+	CueData* c_ty = new CueData{};
+	CueDataVel* c_vroll = new CueDataVel{};
+	CueDataVel* c_vpitch = new CueDataVel{};
+	CueDataVel* c_vyaw = new CueDataVel{};
+
+
+	#pragma region Log data
+	//logging 
 	std::string log_fldr = "log/rt/";
 	std::string delimiter = "\t"; //tab limited text file with 8 point precision
 	std::string log_filename = "log_data_";
@@ -44,14 +56,8 @@ void Cueing_online_test()
 	log_filename += ".dat";
 	std::fstream log_fptr;
 	log_fptr.open(log_fldr + log_filename, std::fstream::in | std::fstream::out | std::fstream::app);
-
-	// CueData
-	CueData* c_ax = new CueData{};
-	CueData* c_ay = new CueData{};
-	CueData* c_az = new CueData{};
-	CueDataVel* c_vroll = new CueDataVel{};
-	CueDataVel* c_vpitch = new CueDataVel{};
-	CueDataVel* c_vyaw = new CueDataVel{};
+	#pragma endregion
+	
 
 	for (int m = 0; m < RT_TOTAL_SIG_LEN; m++)
 	{
@@ -59,23 +65,31 @@ void Cueing_online_test()
 		SP7Vel* vel = new SP7Vel{0,0,0,0,0,0};
 		double timestamp = 0.0;
 		
-		//HPF
-		cueing_acceleration_online(xplane_ax_test3[m], xplane_t_test3[m], &high_pass_kernel_rt[0], scale_factor, 0, c_ax, &(pos->x), &(vel->vx), &timestamp);
 
-		cueing_acceleration_online(xplane_ay_test3[m], xplane_t_test3[m], &high_pass_kernel_rt[0], scale_factor, 1, c_ay , &(pos->y), &(vel->vy), &timestamp);
+		//Translational channel
+		cue_translational_channel(xplane_ax_test3[m], xplane_t_test3[m], &high_pass_kernel_rt[0], scale_factor_translation, 0, c_ax, &(pos->x), &(vel->vx), &timestamp);
 
-		cueing_acceleration_online(xplane_az_test3[m], xplane_t_test3[m], &high_pass_kernel_rt[0], scale_factor, 2, c_az , &(pos->z), &(vel->vz), & timestamp);
+		cue_translational_channel(xplane_ay_test3[m], xplane_t_test3[m], &high_pass_kernel_rt[0], scale_factor_translation, 1, c_ay , &(pos->y), &(vel->vy), &timestamp);
 
-		cueing_velocity_online(xplane_vroll_test3[m], xplane_t_test3[m], &high_pass_kernel_rt[0], scale_factor, 3, c_vroll, &(pos->roll), &(vel->vroll), &timestamp);
+		cue_translational_channel(xplane_az_test3[m], xplane_t_test3[m], &high_pass_kernel_rt[0], scale_factor_translation, 2, c_az , &(pos->z), &(vel->vz), & timestamp);
+
+		// Tilt coordination channel
+		double tilt_x = 0.0;
+		cue_tilt_coordination_channel(xplane_ax_test3[m], xplane_t_test3[m], &low_pass_kernel_rt[0], scale_factor_translation, 0, c_tx, &tilt_x, &timestamp);
+		double tilt_y = 0.0;
+		cue_tilt_coordination_channel(xplane_ay_test3[m], xplane_t_test3[m], &low_pass_kernel_rt[0], scale_factor_translation, 0, c_ty, &tilt_y, &timestamp);
+
+		// Rotational channel
+		cue_rotational_channel(xplane_vroll_test3[m], xplane_t_test3[m], &high_pass_kernel_rt[0], scale_factor_rotation, 3, c_vroll, &(pos->roll), &(vel->vroll), &timestamp);
+		pos->roll += tilt_x; // adding tilt effect
 		
-		cueing_velocity_online(xplane_vpitch_test3[m], xplane_t_test3[m], &high_pass_kernel_rt[0], scale_factor, 4, c_vpitch, &(pos->pitch), &(vel->vpitch), &timestamp);
+		cue_rotational_channel(xplane_vpitch_test3[m], xplane_t_test3[m], &high_pass_kernel_rt[0], scale_factor_rotation, 4, c_vpitch, &(pos->pitch), &(vel->vpitch), &timestamp);
+		pos->pitch += tilt_y;// adding tilt effect
 
-		cueing_velocity_online(xplane_vyaw_test3[m], xplane_t_test3[m], &high_pass_kernel_rt[0], scale_factor, 5, c_vyaw, &(pos->yaw), &(vel->vyaw), &timestamp);
-
-
-		//LPF
+		cue_rotational_channel(xplane_vyaw_test3[m], xplane_t_test3[m], &high_pass_kernel_rt[0], scale_factor_rotation, 5, c_vyaw, &(pos->yaw), &(vel->vyaw), &timestamp);
 
 
+		#pragma region log data
 		if (!log_data) return;
 		//Preparing the data stream
 		std::stringstream ss;
@@ -102,20 +116,23 @@ void Cueing_online_test()
 			
 		}
 
+	#pragma endregion
 		delete pos, vel;
 		
 	}
+	#pragma region log data
 	log_fptr.close();
 	std::cout << "Log file location: " << log_fldr << log_filename ;
+	#pragma endregion
 }
 
-void cueing_acceleration_online(double sig_acc_input, double sig_time, double* kernel, double scale_factor, int data_index,CueData* cue_data, double* out_pos_, double* out_vel_, double* out_t_)
+void cue_translational_channel(double sig_acc_input, double sig_time, double* kernel, double scale_factor, int data_index,CueData* cue_data, double* out_pos_, double* out_vel_, double* out_t_)
 {
 	/* filter => scale => integrate => integrate => update prev*/
 	//Convolving with designed kernel will filter the signal
 	//Offestting should not affect the integration value as the value will be modified  based on that
 	
-	cue_data->t = sig_time;
+	cue_data->t = sig_time - initial_time;
 	cue_data->acc_fltrd = Convolve_rt(&kernel[0], RT_KER_LEN, sig_acc_input, cue_data-> Input_Buff, &(cue_data->circ_buff_idx));
 	cue_data->acc_fltrd_scaled = scale_factor * cue_data->acc_fltrd; //scale 
 	cue_data->velocity = Intergration_Trapezoidal(cue_data->acc_fltrd_scaled, cue_data->acc_fltrd_scaled_prev, cue_data->velocity_prev, cue_data->t_prev, cue_data->t); //Integration
@@ -132,13 +149,13 @@ void cueing_acceleration_online(double sig_acc_input, double sig_time, double* k
 	cue_data->position_prev = cue_data->position;	
 }
 
-void cueing_velocity_online(double sig_vel_input, double sig_time, double* kernel, double scale_factor, int data_index, CueDataVel* cue_data, double* out_pos_, double* out_vel_, double* out_t_)
+void cue_rotational_channel(double sig_vel_input, double sig_time, double* kernel, double scale_factor, int data_index, CueDataVel* cue_data, double* out_pos_, double* out_vel_, double* out_t_)
 {
 	/* filter => scale => integrate => integrate => update prev*/
 	//Convolving with designed kernel will filter the signal
 	//Offestting should not affect the integration value as the value will be modified  based on that
 
-	cue_data->t = sig_time;
+	cue_data->t = sig_time - initial_time;
 	cue_data->velocity_fltr = Convolve_rt(&kernel[0], RT_KER_LEN, sig_vel_input, cue_data->Input_Buff, &(cue_data->circ_buff_idx));
 	cue_data->velocity_fltr_scaled = scale_factor * cue_data->velocity_fltr; //scale 
 	cue_data->position = Intergration_Trapezoidal(cue_data->velocity_fltr_scaled, cue_data->velocity_fltr_scaled_prev, cue_data->position_prev, cue_data->t_prev, cue_data->t);
@@ -153,9 +170,50 @@ void cueing_velocity_online(double sig_vel_input, double sig_time, double* kerne
 	cue_data->position_prev = cue_data->position;
 }
 
+void cue_tilt_coordination_channel(double sig_acc_input, double sig_time, double* kernel, double scale_factor, int data_index, CueData* cue_data, double* out_ang_, double* out_t_)
+{
+	// LPF => Tilt cooridnation =>Integration => rate limit [x and y axis only -> not the up axis] 
+	/* 
+	Max tilt angle	      = 5 deg
+	Max tilt rate		  = 5 deg/s
+	Max tilt acceleration = 8 deg/s^2
+	Ref - 10.1177/0037549716675955*/
+
+	double rate_limit_factor = 1;
+	double g = 9.81;
+	cue_data->t = sig_time - initial_time;
+	cue_data->acc_fltrd = Convolve_rt(&kernel[0], RT_KER_LEN, sig_acc_input, cue_data->Input_Buff, &(cue_data->circ_buff_idx));
+	cue_data->acc_fltrd_scaled = scale_factor * cue_data->acc_fltrd; //scale 
+	// Tilt scaling factor
+	double K = 5;//form factor [3-6]
+	double theta_max = 5 * (PI / 180);
+	double Acc_max = g * theta_max;
+	double y_tilt_ref = Acc_max * tanh(cue_data->acc_fltrd_scaled / K * Acc_max);
+	// Tilt coordination --> Linerzation [Reid and Nahon]
+	cue_data->velocity = y_tilt_ref / g;
+	if (data_index == 0) 
+	{
+		cue_data->velocity = -cue_data->velocity;
+	}
+	// Integration 
+	cue_data->position = Intergration_Trapezoidal(cue_data->velocity, cue_data->velocity_prev, cue_data->position_prev, cue_data->t_prev, cue_data->t);
+	//Rate Limit [1-5 deg]
+	cue_data->position = rate_limit_factor * cue_data->position;
+
+	//Updating the output values
+	*(out_ang_) = cue_data->position;
+	*(out_t_) = cue_data->t;
+	//Updating the previous to current
+	cue_data->t_prev = cue_data->t;
+	cue_data->acc_fltrd_scaled_prev = cue_data->acc_fltrd_scaled;
+	cue_data->velocity_prev = cue_data->velocity;
+	cue_data->position_prev = cue_data->position;
+}
+
+
 #pragma endregion
 
-#pragma region Helper functions
+#pragma region Helper functions RT
 
 double Convolve_rt(double* h, int h_size, double x_in, double* x, int* circ_index)
 {
@@ -184,58 +242,6 @@ double Intergration_Trapezoidal(double input_curr, double input_prev, double out
 	if (input_curr == 0 && input_prev == 0)
 		return 0.0;
 	return output_prev + ((t_curr - t_prev) * ((input_curr + input_prev) / 2)); // Trapedzoidal intergral
-}
-//double Intergration_Trapezoidal(double acc_curr, double acc_prev, double vel_prev, double t_prev, double t_curr)
-
-void convolve(double* sig1, int sig1_len, double* sig2, int sig2_len, double* convolved_sig_)
-{
-	//Convolution is commutative
-	bool isSig2Large = (sig1_len < sig2_len);
-
-	if (isSig2Large)
-	{
-		for (int j = sig1_len; j < sig2_len; j++)
-		{
-			convolved_sig_[j] = 0;
-			for (int i = 0; i < sig1_len; i++)
-			{
-				convolved_sig_[j] = convolved_sig_[j] + sig2[j - i] * sig1[i];
-
-			}
-		}
-	}
-	else
-	{
-		for (int j = sig2_len; j < sig1_len; j++)
-		{
-			convolved_sig_[j] = 0;
-			for (int i = 0; i < sig2_len; i++)
-			{
-				convolved_sig_[j] = convolved_sig_[j] + sig1[j - i] * sig2[i];
-
-			}
-		}
-	}
-
-}//O((sig1_len+sig2_len)^2) //could be improved
-
-
-
-
-void negate_scale_rmpadding(double* filtered_sig, int kernel_len, int sig_len, int scale_factor, double* sig_out_)
-{
-	//Scale value calculation, removing padding data and negating the effect of spectral inversion
-	int j = 0;
-	int total_length = kernel_len + sig_len;
-	int mid_idx = (total_length / 2) - 1;
-	if (total_length % 2 != 0)
-		mid_idx++;
-
-	for (int i = mid_idx; i < mid_idx + sig_len; i++)
-	{
-		sig_out_[j] = scale_factor * (-filtered_sig[i]);
-		j++;
-	}
 }
 
 #pragma endregion
@@ -756,6 +762,60 @@ void cueing_acceleration(double * sig_acc_input, double hp_cutoff, double scale_
 
 }
 #pragma endregion 
+
+#pragma region Helpter function offline
+void convolve(double* sig1, int sig1_len, double* sig2, int sig2_len, double* convolved_sig_)
+{
+	//Convolution is commutative
+	bool isSig2Large = (sig1_len < sig2_len);
+
+	if (isSig2Large)
+	{
+		for (int j = sig1_len; j < sig2_len; j++)
+		{
+			convolved_sig_[j] = 0;
+			for (int i = 0; i < sig1_len; i++)
+			{
+				convolved_sig_[j] = convolved_sig_[j] + sig2[j - i] * sig1[i];
+
+			}
+		}
+	}
+	else
+	{
+		for (int j = sig2_len; j < sig1_len; j++)
+		{
+			convolved_sig_[j] = 0;
+			for (int i = 0; i < sig2_len; i++)
+			{
+				convolved_sig_[j] = convolved_sig_[j] + sig1[j - i] * sig2[i];
+
+			}
+		}
+	}
+
+}//O((sig1_len+sig2_len)^2) //could be improved
+
+
+
+
+void negate_scale_rmpadding(double* filtered_sig, int kernel_len, int sig_len, int scale_factor, double* sig_out_)
+{
+	//Scale value calculation, removing padding data and negating the effect of spectral inversion
+	int j = 0;
+	int total_length = kernel_len + sig_len;
+	int mid_idx = (total_length / 2) - 1;
+	if (total_length % 2 != 0)
+		mid_idx++;
+
+	for (int i = mid_idx; i < mid_idx + sig_len; i++)
+	{
+		sig_out_[j] = scale_factor * (-filtered_sig[i]);
+		j++;
+	}
+}
+
+#pragma endregion
 
 #pragma region DSP Tutorial Methods
 void band_pass_test()

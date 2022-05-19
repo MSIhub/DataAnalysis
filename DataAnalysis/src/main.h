@@ -36,6 +36,7 @@
 #define RT_SIG_LEN 1 // In real time, only 1 input is received at a time
 #define RT_KER_LEN 4	
 //4
+const double PI = 3.14159265359;
 
 
 constexpr double SP7_ZERO_POSE[6] = {0.0, 0.0, 0.401, 0.0, 0.0, 0.0};
@@ -161,22 +162,21 @@ struct CueDataVel
     int circ_buff_idx = RT_KER_LEN - 1;
 };
 
+double initial_time = xplane_t_test3[0];//TimeRelative
 
-
-//FUNCTION PROTOTYPES IN MAIN FOR TESTING PURPOSE
-void cueing_acceleration_online(double sig_acc_input, double sig_time, double* kernel, double scale_factor, int data_index, CueData* cue_data, double* out_pos_, double* out_vel_, double* out_t_);
-
-void cueing_velocity_online(double sig_vel_input, double sig_time, double* kernel, double scale_factor, int data_index, CueDataVel* cue_data, double* out_pos_, double* out_vel_, double* out_t_);
-
-
+//FUNCTION PROTOTYPES 
+void cue_translational_channel(double sig_acc_input, double sig_time, double* kernel, double scale_factor, int data_index, CueData* cue_data, double* out_pos_, double* out_vel_, double* out_t_);
+void cue_rotational_channel(double sig_vel_input, double sig_time, double* kernel, double scale_factor, int data_index, CueDataVel* cue_data, double* out_pos_, double* out_vel_, double* out_t_);
+void cue_tilt_coordination_channel(double sig_acc_input, double sig_time, double* kernel, double scale_factor, int data_index, CueData* cue_data, double* out_ang_, double* out_t_);
+double Intergration_Trapezoidal(double input_curr, double input_prev, double output_prev, double t_prev, double t_curr);
+double Convolve_rt(double* h, int h_size, double x_in, double* x, int* circ_index);
+//
 void Cueing_online_test();
 void Cueing_offline_test();
 void cueing_acceleration(double*, double, double, std::string, int);
 void cueing_velocity(double*, double , double , std::string , int );
-double Intergration_Trapezoidal(double input_curr, double input_prev, double output_prev, double t_prev, double t_curr);
 void convolve(double* sig1, int sig1_len, double* sig2, int sig2_len, double* convolved_sig_);
 void negate_scale_rmpadding(double* filtered_sig, int kernel_len, int sig_len, int scale_factor, double* sig_out_);
-double Convolve_rt(double* h, int h_size, double x_in, double* x, int* circ_index);
 
 //temp tests
 void calc_running_sum(double*, double* , int );
